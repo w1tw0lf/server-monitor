@@ -38,33 +38,58 @@ if [[ ! -f "$INSTALL_DIR/.env" ]]; then
     read -rp "Server name [$default_name]: " input_name
     server_name="${input_name:-$default_name}"
 
-    # Gotify server address
+    # Notification provider
     echo ""
-    read -rp "Gotify server address (e.g. gotify.example.com): " gotify_host
-    gotify_host="${gotify_host#http://}"
-    gotify_host="${gotify_host#https://}"
-    gotify_host="${gotify_host%/}"
+    echo "Choose a notification provider:"
+    echo "  1) Gotify"
+    echo "  2) Slack (incoming webhook)"
+    read -rp "Provider [1]: " provider_choice
+    gotify_url=""
+    gotify_token=""
+    slack_url=""
+    case "${provider_choice:-1}" in
+        2|slack|Slack|SLACK)
+            notify_provider="slack"
+            echo ""
+            echo "Create an incoming webhook at https://api.slack.com/messaging/webhooks"
+            read -rp "Slack webhook URL: " slack_url
+            display_target="Slack webhook"
+            ;;
+        *)
+            notify_provider="gotify"
+            echo ""
+            read -rp "Gotify server address (e.g. gotify.example.com): " gotify_host
+            gotify_host="${gotify_host#http://}"
+            gotify_host="${gotify_host#https://}"
+            gotify_host="${gotify_host%/}"
 
-    # Protocol
-    echo ""
-    read -rp "Use HTTPS? [Y/n]: " use_https
-    if [[ "${use_https,,}" == "n" ]]; then
-        gotify_url="http://$gotify_host"
-    else
-        gotify_url="https://$gotify_host"
-    fi
+            echo ""
+            read -rp "Use HTTPS? [Y/n]: " use_https
+            if [[ "${use_https,,}" == "n" ]]; then
+                gotify_url="http://$gotify_host"
+            else
+                gotify_url="https://$gotify_host"
+            fi
 
-    # API token
-    echo ""
-    read -rp "Gotify app token: " gotify_token
+            echo ""
+            read -rp "Gotify app token: " gotify_token
+            display_target="$gotify_url"
+            ;;
+    esac
 
     cat > "$INSTALL_DIR/.env" << EOF
 # Server identity (used as notification prefix)
 SERVER_NAME="$server_name"
 
-# Gotify notification server
+# Notification provider — "gotify" or "slack"
+NOTIFY_PROVIDER=$notify_provider
+
+# Gotify settings (used when NOTIFY_PROVIDER=gotify)
 GOTIFY_URL=$gotify_url
 GOTIFY_TOKEN=$gotify_token
+
+# Slack settings (used when NOTIFY_PROVIDER=slack)
+SLACK_WEBHOOK_URL=$slack_url
 
 # Daily summary sections (comma-separated)
 # Core: uptime,load,ram,swap,disk,ssh,alerts
@@ -75,7 +100,8 @@ EOF
     echo ""
     echo "Configuration saved to $INSTALL_DIR/.env"
     echo "  Server name: $server_name"
-    echo "  Gotify URL:  $gotify_url"
+    echo "  Provider:    $notify_provider"
+    echo "  Target:      $display_target"
     echo ""
 else
     # Ensure SERVER_NAME exists in older .env files
@@ -85,6 +111,11 @@ else
         server_name="${input_name:-$default_name}"
         echo "SERVER_NAME=\"$server_name\"" >> "$INSTALL_DIR/.env"
         echo "Added SERVER_NAME=$server_name to existing .env"
+    fi
+    # Ensure NOTIFY_PROVIDER exists in older .env files (default to gotify for backwards compat)
+    if ! grep -q "NOTIFY_PROVIDER" "$INSTALL_DIR/.env"; then
+        echo "NOTIFY_PROVIDER=gotify" >> "$INSTALL_DIR/.env"
+        echo "Added NOTIFY_PROVIDER=gotify to existing .env"
     fi
     echo ".env already exists, skipping."
 fi
@@ -237,9 +268,17 @@ echo "Timers:"
 systemctl list-timers server-monitor-* --no-pager
 echo ""
 
-# Test notification if .env is configured
-if grep -q "your-app-token-here" "$INSTALL_DIR/.env" 2>/dev/null; then
-    echo "Skipping test notification — edit $INSTALL_DIR/.env first, then run:"
+# Test notification if the active provider has real credentials
+configured=true
+# shellcheck disable=SC1090,SC1091
+source "$INSTALL_DIR/.env"
+case "${NOTIFY_PROVIDER:-gotify}" in
+    gotify) [[ -z "${GOTIFY_TOKEN:-}" || "$GOTIFY_TOKEN" == "your-app-token-here" ]] && configured=false ;;
+    slack)  [[ -z "${SLACK_WEBHOOK_URL:-}" ]] && configured=false ;;
+esac
+
+if ! $configured; then
+    echo "Skipping test notification — fill in credentials in $INSTALL_DIR/.env, then run:"
     echo '  source '"$INSTALL_DIR"'/notify.sh && send_notification "$PREFIX Test" "Monitoring is working!" 2'
 else
     echo "Sending test notification..."

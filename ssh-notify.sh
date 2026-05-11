@@ -15,9 +15,14 @@ if [[ -f "$MONITOR_DIR/.env" ]]; then
     source "$MONITOR_DIR/.env"
 fi
 
-if [[ -z "${GOTIFY_URL:-}" || -z "${GOTIFY_TOKEN:-}" ]]; then
-    exit 0
-fi
+NOTIFY_PROVIDER="${NOTIFY_PROVIDER:-gotify}"
+
+# Bail silently if the chosen provider has no creds — must never block SSH.
+case "$NOTIFY_PROVIDER" in
+    gotify) [[ -z "${GOTIFY_URL:-}" || -z "${GOTIFY_TOKEN:-}" ]] && exit 0 ;;
+    slack)  [[ -z "${SLACK_WEBHOOK_URL:-}" ]] && exit 0 ;;
+    *)      exit 0 ;;
+esac
 
 SERVER="${SERVER_NAME:-$(hostname)}"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S %Z')
@@ -33,17 +38,35 @@ if [[ -z "$SOURCE_IP" ]]; then
 fi
 SOURCE_IP="${SOURCE_IP:-unknown}"
 
+TITLE="[$SERVER] SSH Login: $LOGIN_USER"
+BODY="User: $LOGIN_USER
+IP: $SOURCE_IP
+Time: $TIMESTAMP"
+
 # Send notification in background so SSH is not delayed
 {
-    curl -sfk --max-time 10 \
-        "$GOTIFY_URL/message" \
-        -H "X-Gotify-Key: $GOTIFY_TOKEN" \
-        -F "title=[$SERVER] SSH Login: $LOGIN_USER" \
-        -F "message=User: $LOGIN_USER
-IP: $SOURCE_IP
-Time: $TIMESTAMP" \
-        -F "priority=5" \
-        >/dev/null 2>&1
+    case "$NOTIFY_PROVIDER" in
+        gotify)
+            curl -sfk --max-time 10 \
+                "$GOTIFY_URL/message" \
+                -H "X-Gotify-Key: $GOTIFY_TOKEN" \
+                -F "title=$TITLE" \
+                -F "message=$BODY" \
+                -F "priority=5" \
+                >/dev/null 2>&1
+            ;;
+        slack)
+            # Inline JSON escape of BODY (newlines → \n, quotes → \")
+            esc_body="${BODY//\\/\\\\}"
+            esc_body="${esc_body//\"/\\\"}"
+            esc_body="${esc_body//$'\n'/\\n}"
+            curl -sfk --max-time 10 \
+                -H "Content-Type: application/json" \
+                -d "{\"text\":\":large_yellow_circle: *$TITLE*\\n$esc_body\"}" \
+                "$SLACK_WEBHOOK_URL" \
+                >/dev/null 2>&1
+            ;;
+    esac
 } &
 
 exit 0

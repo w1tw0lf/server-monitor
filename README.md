@@ -2,7 +2,8 @@
 
 A lightweight, dependency-free server monitoring suite for Linux. Watches system
 resources, service health, SSH logins, and software updates, and pushes
-notifications to a [Gotify](https://gotify.net/) server.
+notifications to either [Gotify](https://gotify.net/) or
+[Slack](https://api.slack.com/messaging/webhooks) — your choice.
 
 Everything runs as systemd timers — no daemons, no databases, no agents. Just
 bash, `curl`, and a handful of common utilities (`vmstat`, `free`, `df`, `ss`).
@@ -33,7 +34,9 @@ bash, `curl`, and a handful of common utilities (`vmstat`, `free`, `df`, `ss`).
 - Linux with systemd
 - bash 4+
 - `curl`, `vmstat` (`procps`), `ss` (`iproute2`)
-- A reachable Gotify server with an application token
+- One of:
+  - A reachable Gotify server with an application token, or
+  - A Slack incoming webhook URL
 
 ## Installation
 
@@ -46,8 +49,9 @@ sudo bash install.sh
 The installer will:
 
 1. Copy scripts to `/opt/server-monitor`
-2. Prompt for your server name, Gotify URL, and app token, writing them to
-   `/opt/server-monitor/.env` (mode `600`)
+2. Prompt for your server name, your notification provider (Gotify or Slack),
+   and the matching credentials, writing them to `/opt/server-monitor/.env`
+   (mode `600`)
 3. Run `discover.sh` to populate `services.conf`
 4. Install and enable four systemd timers
 5. Add a PAM hook to `/etc/pam.d/sshd` for SSH login notifications
@@ -62,17 +66,47 @@ duplicate the PAM hook.
 
 ```bash
 SERVER_NAME="My Server"
+
+# "gotify" or "slack"
+NOTIFY_PROVIDER=gotify
+
+# Used when NOTIFY_PROVIDER=gotify
 GOTIFY_URL=https://gotify.example.com
 GOTIFY_TOKEN=your-app-token-here
+
+# Used when NOTIFY_PROVIDER=slack
+# (form: https://hooks.slack.com/services/<workspace>/<channel>/<token>)
+SLACK_WEBHOOK_URL=
+
 SUMMARY_SECTIONS="uptime,load,ram,swap,disk,ssh,alerts"
 ```
 
 - `SERVER_NAME` is prefixed to every notification title.
+- `NOTIFY_PROVIDER` chooses where alerts are sent. Only the matching block of
+  credentials is required; the other can stay blank.
 - `SUMMARY_SECTIONS` controls the daily digest. Core sections are always
   available; optional ones (`pm2`, `docker`, `systemd`, `webserver`, `postgres`)
   only render if the relevant software is installed.
 
 See `.env.example` for the full template.
+
+### Slack setup
+
+1. In Slack, go to **Apps → Build → Create New App → From scratch**, name it
+   anything (e.g. *Server Monitor*), and pick a workspace.
+2. Open **Incoming Webhooks**, toggle it on, click **Add New Webhook to
+   Workspace**, and pick the channel that should receive alerts.
+3. Copy the resulting `https://hooks.slack.com/services/...` URL into
+   `SLACK_WEBHOOK_URL` and set `NOTIFY_PROVIDER=slack`.
+
+Slack messages are formatted with a severity emoji derived from the alert
+priority (red ≥ 8, yellow 5–7, green ≤ 4).
+
+### Switching providers later
+
+Edit `/opt/server-monitor/.env`, change `NOTIFY_PROVIDER`, and make sure the
+matching credentials are filled in. No restart required — the next timer tick
+picks it up.
 
 ### `services.conf`
 
