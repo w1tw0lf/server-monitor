@@ -1,0 +1,33 @@
+# Service monitoring configuration
+# Format: name|check_command|priority|label
+# Priority: 1 (low) to 10 (critical)
+#
+# This file is read by check-services.sh. Each line defines a service to monitor.
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# Run discover.sh to auto-generate this file based on your system.
+
+# Web servers
+nginx|systemctl is-active --quiet nginx|9|Nginx Web Server
+# caddy|systemctl is-active --quiet caddy|9|Caddy Web Server
+
+# Web applications
+# myapp|curl -sf --max-time 5 -o /dev/null http://localhost:3000|9|My Web App
+# api|curl -sf --max-time 5 -o /dev/null http://localhost:8080/health|8|API Server
+
+# Public HTTPS endpoint
+# public|curl -sf --max-time 10 -o /dev/null https://example.com|9|Public Site (HTTPS)
+
+# Databases
+# postgres|systemctl is-active --quiet postgresql|8|PostgreSQL
+# mysql|systemctl is-active --quiet mysql|8|MySQL
+# redis|systemctl is-active --quiet redis-server|6|Redis
+
+# Docker containers
+# mycontainer|docker inspect -f '{{.State.Running}}' mycontainer 2>/dev/null | grep -q true|7|Docker: mycontainer
+
+# PM2 processes
+# webapp|pm2 describe webapp >/dev/null 2>&1|8|PM2: webapp
+
+# Other services
+# fail2ban|systemctl is-active --quiet fail2ban|6|Fail2ban
