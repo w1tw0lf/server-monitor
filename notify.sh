@@ -10,7 +10,7 @@ if [[ -f "$MONITOR_DIR/.env" ]]; then
     source "$MONITOR_DIR/.env"
 fi
 
-# Notification provider — "gotify" or "slack" (default: gotify)
+# Notification provider — "gotify", "slack", or "telegram" (default: gotify)
 NOTIFY_PROVIDER="${NOTIFY_PROVIDER:-gotify}"
 
 case "$NOTIFY_PROVIDER" in
@@ -26,8 +26,14 @@ case "$NOTIFY_PROVIDER" in
             exit 1
         fi
         ;;
+    telegram)
+        if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_CHAT_ID:-}" ]]; then
+            echo "ERROR: NOTIFY_PROVIDER=telegram but TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set in $MONITOR_DIR/.env" >&2
+            exit 1
+        fi
+        ;;
     *)
-        echo "ERROR: NOTIFY_PROVIDER must be 'gotify' or 'slack' (got: '$NOTIFY_PROVIDER')" >&2
+        echo "ERROR: NOTIFY_PROVIDER must be 'gotify', 'slack', or 'telegram' (got: '$NOTIFY_PROVIDER')" >&2
         exit 1
         ;;
 esac
@@ -49,6 +55,26 @@ _json_escape() {
     printf '%s' "$s"
 }
 
+# HTML entity escape for Telegram's parse_mode=HTML (only &, <, > are special).
+# The '\&' guards against bash's patsub_replacement (5.2+), where a bare '&' in
+# the replacement string means "the matched text".
+_html_escape() {
+    local s="$1"
+    s="${s//&/\&amp;}"
+    s="${s//</\&lt;}"
+    s="${s//>/\&gt;}"
+    printf '%s' "$s"
+}
+
+# Map Gotify-style priority (1-10) to a colored-circle emoji (used by Slack & Telegram).
+# Bytes are written explicitly so this file stays plain-ASCII.
+_severity_emoji() {
+    if   (( $1 >= 8 )); then printf '\xf0\x9f\x94\xb4'   # red circle
+    elif (( $1 >= 5 )); then printf '\xf0\x9f\x9f\xa1'   # yellow circle
+    else                     printf '\xf0\x9f\x9f\xa2'   # green circle
+    fi
+}
+
 _send_gotify() {
     local title="$1" message="$2" priority="$3"
     curl -sfk --max-time 10 \
@@ -62,18 +88,27 @@ _send_gotify() {
 
 _send_slack() {
     local title="$1" message="$2" priority="$3"
-    local emoji
-    # Map Gotify-style priority (1-10) to a Slack severity emoji
-    if   (( priority >= 8 )); then emoji=":red_circle:"
-    elif (( priority >= 5 )); then emoji=":large_yellow_circle:"
-    else                           emoji=":large_green_circle:"
-    fi
-    local payload
+    local emoji payload
+    emoji=$(_severity_emoji "$priority")
     payload="{\"text\":\"$emoji *$(_json_escape "$title")*\\n$(_json_escape "$message")\"}"
     curl -sfk --max-time 10 \
         -H "Content-Type: application/json" \
         -d "$payload" \
         "$SLACK_WEBHOOK_URL" \
+        >/dev/null 2>&1
+}
+
+_send_telegram() {
+    local title="$1" message="$2" priority="$3"
+    local emoji
+    emoji=$(_severity_emoji "$priority")
+    curl -sfk --max-time 10 \
+        "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+        --data-urlencode "parse_mode=HTML" \
+        --data-urlencode "disable_web_page_preview=true" \
+        --data-urlencode "text=${emoji} <b>$(_html_escape "$title")</b>
+$(_html_escape "$message")" \
         >/dev/null 2>&1
 }
 
@@ -85,8 +120,9 @@ send_notification() {
     local priority="${3:-4}"
 
     case "$NOTIFY_PROVIDER" in
-        gotify) _send_gotify "$title" "$message" "$priority" ;;
-        slack)  _send_slack  "$title" "$message" "$priority" ;;
+        gotify)   _send_gotify   "$title" "$message" "$priority" ;;
+        slack)    _send_slack    "$title" "$message" "$priority" ;;
+        telegram) _send_telegram "$title" "$message" "$priority" ;;
     esac || {
         echo "$(date '+%Y-%m-%d %H:%M:%S') FAILED ($NOTIFY_PROVIDER): $title" >> "$STATE_DIR/notify-errors.log"
     }

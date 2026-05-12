@@ -2,8 +2,9 @@
 
 A lightweight, dependency-free server monitoring suite for Linux. Watches system
 resources, service health, SSH logins, and software updates, and pushes
-notifications to either [Gotify](https://gotify.net/) or
-[Slack](https://api.slack.com/messaging/webhooks) — your choice.
+notifications to [Gotify](https://gotify.net/),
+[Slack](https://api.slack.com/messaging/webhooks), or
+[Telegram](https://core.telegram.org/bots) — your choice.
 
 Everything runs as systemd timers — no daemons, no databases, no agents. Just
 bash, `curl`, and a handful of common utilities (`vmstat`, `free`, `df`, `ss`).
@@ -35,8 +36,9 @@ bash, `curl`, and a handful of common utilities (`vmstat`, `free`, `df`, `ss`).
 - bash 4+
 - `curl`, `vmstat` (`procps`), `ss` (`iproute2`)
 - One of:
-  - A reachable Gotify server with an application token, or
-  - A Slack incoming webhook URL
+  - A reachable Gotify server with an application token,
+  - A Slack incoming webhook URL, or
+  - A Telegram bot token and chat id
 
 ## Installation
 
@@ -49,9 +51,9 @@ sudo bash install.sh
 The installer will:
 
 1. Copy scripts to `/opt/server-monitor`
-2. Prompt for your server name, your notification provider (Gotify or Slack),
-   and the matching credentials, writing them to `/opt/server-monitor/.env`
-   (mode `600`)
+2. Prompt for your server name, your notification provider (Gotify, Slack, or
+   Telegram), and the matching credentials, writing them to
+   `/opt/server-monitor/.env` (mode `600`)
 3. Run `discover.sh` to populate `services.conf`
 4. Install and enable four systemd timers
 5. Add a PAM hook to `/etc/pam.d/sshd` for SSH login notifications
@@ -67,7 +69,7 @@ duplicate the PAM hook.
 ```bash
 SERVER_NAME="My Server"
 
-# "gotify" or "slack"
+# "gotify", "slack", or "telegram"
 NOTIFY_PROVIDER=gotify
 
 # Used when NOTIFY_PROVIDER=gotify
@@ -78,12 +80,16 @@ GOTIFY_TOKEN=your-app-token-here
 # (form: https://hooks.slack.com/services/<workspace>/<channel>/<token>)
 SLACK_WEBHOOK_URL=
 
+# Used when NOTIFY_PROVIDER=telegram
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
 SUMMARY_SECTIONS="uptime,load,ram,swap,disk,ssh,alerts"
 ```
 
 - `SERVER_NAME` is prefixed to every notification title.
 - `NOTIFY_PROVIDER` chooses where alerts are sent. Only the matching block of
-  credentials is required; the other can stay blank.
+  credentials is required; the others can stay blank.
 - `SUMMARY_SECTIONS` controls the daily digest. Core sections are always
   available; optional ones (`pm2`, `docker`, `systemd`, `webserver`, `postgres`)
   only render if the relevant software is installed.
@@ -99,8 +105,18 @@ See `.env.example` for the full template.
 3. Copy the resulting `https://hooks.slack.com/services/...` URL into
    `SLACK_WEBHOOK_URL` and set `NOTIFY_PROVIDER=slack`.
 
-Slack messages are formatted with a severity emoji derived from the alert
-priority (red ≥ 8, yellow 5–7, green ≤ 4).
+### Telegram setup
+
+1. Message [@BotFather](https://t.me/BotFather), send `/newbot`, and follow the
+   prompts. It hands you a bot token like `123456789:ABCdef...`.
+2. Start a chat with your new bot (or add it to a group and send any message),
+   then open `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and
+   read the `chat.id` value out of the JSON. For groups the id is negative.
+3. Put the token in `TELEGRAM_BOT_TOKEN`, the id in `TELEGRAM_CHAT_ID`, and set
+   `NOTIFY_PROVIDER=telegram`.
+
+Slack and Telegram messages are prefixed with a severity emoji derived from the
+alert priority (🔴 ≥ 8, 🟡 5–7, 🟢 ≤ 4).
 
 ### Switching providers later
 

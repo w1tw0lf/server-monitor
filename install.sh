@@ -43,10 +43,13 @@ if [[ ! -f "$INSTALL_DIR/.env" ]]; then
     echo "Choose a notification provider:"
     echo "  1) Gotify"
     echo "  2) Slack (incoming webhook)"
+    echo "  3) Telegram (bot)"
     read -rp "Provider [1]: " provider_choice
     gotify_url=""
     gotify_token=""
     slack_url=""
+    telegram_bot_token=""
+    telegram_chat_id=""
     case "${provider_choice:-1}" in
         2|slack|Slack|SLACK)
             notify_provider="slack"
@@ -54,6 +57,16 @@ if [[ ! -f "$INSTALL_DIR/.env" ]]; then
             echo "Create an incoming webhook at https://api.slack.com/messaging/webhooks"
             read -rp "Slack webhook URL: " slack_url
             display_target="Slack webhook"
+            ;;
+        3|telegram|Telegram|TELEGRAM)
+            notify_provider="telegram"
+            echo ""
+            echo "Create a bot with @BotFather, then message it (or add it to a group)."
+            read -rp "Telegram bot token: " telegram_bot_token
+            echo ""
+            echo "Find your chat id at https://api.telegram.org/bot${telegram_bot_token}/getUpdates"
+            read -rp "Telegram chat id: " telegram_chat_id
+            display_target="Telegram chat $telegram_chat_id"
             ;;
         *)
             notify_provider="gotify"
@@ -81,7 +94,7 @@ if [[ ! -f "$INSTALL_DIR/.env" ]]; then
 # Server identity (used as notification prefix)
 SERVER_NAME="$server_name"
 
-# Notification provider — "gotify" or "slack"
+# Notification provider — "gotify", "slack", or "telegram"
 NOTIFY_PROVIDER=$notify_provider
 
 # Gotify settings (used when NOTIFY_PROVIDER=gotify)
@@ -90,6 +103,10 @@ GOTIFY_TOKEN=$gotify_token
 
 # Slack settings (used when NOTIFY_PROVIDER=slack)
 SLACK_WEBHOOK_URL=$slack_url
+
+# Telegram settings (used when NOTIFY_PROVIDER=telegram)
+TELEGRAM_BOT_TOKEN=$telegram_bot_token
+TELEGRAM_CHAT_ID=$telegram_chat_id
 
 # Daily summary sections (comma-separated)
 # Core: uptime,load,ram,swap,disk,ssh,alerts
@@ -273,8 +290,9 @@ configured=true
 # shellcheck disable=SC1090,SC1091
 source "$INSTALL_DIR/.env"
 case "${NOTIFY_PROVIDER:-gotify}" in
-    gotify) [[ -z "${GOTIFY_TOKEN:-}" || "$GOTIFY_TOKEN" == "your-app-token-here" ]] && configured=false ;;
-    slack)  [[ -z "${SLACK_WEBHOOK_URL:-}" ]] && configured=false ;;
+    gotify)   [[ -z "${GOTIFY_TOKEN:-}" || "$GOTIFY_TOKEN" == "your-app-token-here" ]] && configured=false ;;
+    slack)    [[ -z "${SLACK_WEBHOOK_URL:-}" ]] && configured=false ;;
+    telegram) [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_CHAT_ID:-}" ]] && configured=false ;;
 esac
 
 if ! $configured; then

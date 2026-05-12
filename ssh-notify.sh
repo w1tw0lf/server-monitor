@@ -19,9 +19,10 @@ NOTIFY_PROVIDER="${NOTIFY_PROVIDER:-gotify}"
 
 # Bail silently if the chosen provider has no creds — must never block SSH.
 case "$NOTIFY_PROVIDER" in
-    gotify) [[ -z "${GOTIFY_URL:-}" || -z "${GOTIFY_TOKEN:-}" ]] && exit 0 ;;
-    slack)  [[ -z "${SLACK_WEBHOOK_URL:-}" ]] && exit 0 ;;
-    *)      exit 0 ;;
+    gotify)   [[ -z "${GOTIFY_URL:-}" || -z "${GOTIFY_TOKEN:-}" ]] && exit 0 ;;
+    slack)    [[ -z "${SLACK_WEBHOOK_URL:-}" ]] && exit 0 ;;
+    telegram) [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_CHAT_ID:-}" ]] && exit 0 ;;
+    *)        exit 0 ;;
 esac
 
 SERVER="${SERVER_NAME:-$(hostname)}"
@@ -62,8 +63,26 @@ Time: $TIMESTAMP"
             esc_body="${esc_body//$'\n'/\\n}"
             curl -sfk --max-time 10 \
                 -H "Content-Type: application/json" \
-                -d "{\"text\":\":large_yellow_circle: *$TITLE*\\n$esc_body\"}" \
+                -d "{\"text\":\"$(printf '\xf0\x9f\x9f\xa1') *$TITLE*\\n$esc_body\"}" \
                 "$SLACK_WEBHOOK_URL" \
+                >/dev/null 2>&1
+            ;;
+        telegram)
+            # Inline HTML escape of BODY (&, <, > are special under parse_mode=HTML).
+            # '\&' guards against bash's patsub_replacement (5.2+).
+            esc_body="${BODY//&/\&amp;}"
+            esc_body="${esc_body//</\&lt;}"
+            esc_body="${esc_body//>/\&gt;}"
+            esc_title="${TITLE//&/\&amp;}"
+            esc_title="${esc_title//</\&lt;}"
+            esc_title="${esc_title//>/\&gt;}"
+            curl -sfk --max-time 10 \
+                "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+                --data-urlencode "parse_mode=HTML" \
+                --data-urlencode "disable_web_page_preview=true" \
+                --data-urlencode "text=$(printf '\xf0\x9f\x9f\xa1') <b>${esc_title}</b>
+${esc_body}" \
                 >/dev/null 2>&1
             ;;
     esac
